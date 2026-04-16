@@ -817,15 +817,15 @@ float select(bool  _cond, float _true, float _false) { return _cond ? _true : _f
 vec2  select(bool  _cond, vec2  _true, vec2  _false) { return _cond ? _true : _false; }
 vec3  select(bool  _cond, vec3  _true, vec3  _false) { return _cond ? _true : _false; }
 vec4  select(bool  _cond, vec4  _true, vec4  _false) { return _cond ? _true : _false; }
-vec2  select(bvec2 _cond, vec2  _true, vec2  _false) { return (vec2(_cond) * _true) + (vec2(not(_cond) ) * _false); }
-vec3  select(bvec3 _cond, vec3  _true, vec3  _false) { return (vec3(_cond) * _true) + (vec3(not(_cond) ) * _false); }
-vec4  select(bvec4 _cond, vec4  _true, vec4  _false) { return (vec4(_cond) * _true) + (vec4(not(_cond) ) * _false); }
 #	if BGFX_SHADER_LANGUAGE_GLSL >= 130 \
 	|| BGFX_SHADER_LANGUAGE_HLSL        \
 	|| BGFX_SHADER_LANGUAGE_PSSL        \
 	|| BGFX_SHADER_LANGUAGE_SPIRV       \
 	|| BGFX_SHADER_LANGUAGE_METAL       \
 	|| BGFX_SHADER_LANGUAGE_WGSL
+vec2  select(bvec2 _cond, vec2  _true, vec2  _false) { return (vec2(_cond) * _true) + (vec2(not(_cond) ) * _false); }
+vec3  select(bvec3 _cond, vec3  _true, vec3  _false) { return (vec3(_cond) * _true) + (vec3(not(_cond) ) * _false); }
+vec4  select(bvec4 _cond, vec4  _true, vec4  _false) { return (vec4(_cond) * _true) + (vec4(not(_cond) ) * _false); }
 int   select(bool  _cond, int   _true, int   _false) { return _cond ? _true : _false; }
 ivec2 select(bool  _cond, ivec2 _true, ivec2 _false) { return _cond ? _true : _false; }
 ivec3 select(bool  _cond, ivec3 _true, ivec3 _false) { return _cond ? _true : _false; }
