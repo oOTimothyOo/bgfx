@@ -849,18 +849,22 @@ namespace bgfx
 	struct BitMaskToIndexIteratorT
 	{
 		BitMaskToIndexIteratorT(MaskT _mask)
+			: mask(0)
+			, idx(0)
 		{
-			const uint8_t ntz = bx::countTrailingZeros(_mask);
-			mask = _mask >> ntz;
+			const uint8_t ntz = bx::countTrailingZeros<MaskT>(_mask);
+			mask = 0 == _mask ? MaskT(0) : MaskT(_mask >> ntz);
 			idx  = ntz;
 		}
 
 		void next()
 		{
-			// operator>> promotes to int, so we need to cast back:
-			const uint8_t ntzPlus1 = bx::countTrailingZeros<MaskT>(mask>>1) + 1;
-			mask >>= ntzPlus1;
-			idx   += ntzPlus1;
+			mask = MaskT(mask >> 1);
+			idx += 1;
+
+			const uint8_t ntz = bx::countTrailingZeros<MaskT>(mask);
+			mask = 0 == mask ? MaskT(0) : MaskT(mask >> ntz);
+			idx += ntz;
 		}
 
 		bool isDone() const
@@ -875,6 +879,8 @@ namespace bgfx
 	struct ClearQuad
 	{
 		ClearQuad()
+			: m_vb(BGFX_INVALID_HANDLE)
+			, m_layout(BGFX_INVALID_HANDLE)
 		{
 			for (uint32_t ii = 0; ii < BX_COUNTOF(m_program); ++ii)
 			{
@@ -888,6 +894,37 @@ namespace bgfx
 		VertexBufferHandle m_vb;
 		VertexLayoutHandle m_layout;
 		ProgramHandle m_program[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
+	};
+
+	struct MipGen
+	{
+		MipGen()
+			: u_mipGen(BGFX_INVALID_HANDLE)
+			, s_texMipSrc(BGFX_INVALID_HANDLE)
+		{
+			for (uint32_t ii = 0; ii < BX_COUNTOF(m_program); ++ii)
+			{
+				m_program[ii] = BGFX_INVALID_HANDLE;
+			}
+		}
+
+		void init();
+		void shutdown();
+
+		static bool isSupported(TextureFormat::Enum _format)
+		{
+			return false
+				|| TextureFormat::RGBA8   == _format
+				|| TextureFormat::BGRA8   == _format
+				|| TextureFormat::RGBA16  == _format
+				|| TextureFormat::RGBA16F == _format
+				|| TextureFormat::RGBA32F == _format
+				;
+		}
+
+		ProgramHandle m_program[4];
+		UniformHandle u_mipGen;
+		UniformHandle s_texMipSrc;
 	};
 
 	struct PredefinedUniform
@@ -1096,7 +1133,7 @@ namespace bgfx
 	};
 
 	//
-	static constexpr uint8_t  kSortKeyViewNumBits         = uint8_t(31 - bx::uint32_cntlz(BGFX_CONFIG_MAX_VIEWS) );
+	static constexpr uint8_t  kSortKeyViewNumBits         = uint8_t(31 - bx::countLeadingZeros<uint32_t>(BGFX_CONFIG_MAX_VIEWS) );
 	static constexpr uint8_t  kSortKeyViewBitShift        = 64-kSortKeyViewNumBits;
 	static constexpr uint64_t kSortKeyViewMask            = uint64_t(BGFX_CONFIG_MAX_VIEWS-1)<<kSortKeyViewBitShift;
 
@@ -1866,9 +1903,9 @@ namespace bgfx
 
 		bool setStreamBit(uint8_t _stream, VertexBufferHandle _handle)
 		{
-			const uint8_t bit  = 1<<_stream;
-			const uint8_t mask = m_streamMask & ~bit;
-			const uint8_t tmp  = isValid(_handle) ? bit : 0;
+			const uint32_t bit  = 1<<_stream;
+			const uint32_t mask = m_streamMask & ~bit;
+			const uint32_t tmp  = isValid(_handle) ? bit : 0;
 			m_streamMask = mask | tmp;
 			return 0 != tmp;
 		}
@@ -1893,11 +1930,11 @@ namespace bgfx
 		uint32_t m_startIndirect;
 		uint32_t m_numIndirect;
 		uint32_t m_numIndirectIndex;
+		uint32_t m_streamMask;
 		uint16_t m_instanceDataStride;
 		uint16_t m_numMatrices;
 		uint16_t m_scissor;
 		uint8_t  m_submitFlags;
-		uint8_t  m_streamMask;
 		uint8_t  m_uniformIdx;
 
 		IndexBufferHandle    m_indexBuffer;
@@ -2716,6 +2753,7 @@ namespace bgfx
 			// clear all bytes (inclusively the padding) before we start.
 			bx::memSet(&m_bind, 0, sizeof(m_bind) );
 
+			m_key.reset();
 			m_discard = false;
 			m_draw.clear(BGFX_DISCARD_ALL);
 			m_compute.clear(BGFX_DISCARD_ALL);
@@ -2871,7 +2909,7 @@ namespace bgfx
 
 		void setIndexBuffer(IndexBufferHandle _handle, const IndexBuffer& _ib, uint32_t _firstIndex, uint32_t _numIndices)
 		{
-			BX_ASSERT(UINT8_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
+			BX_ASSERT(UINT32_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
 			m_draw.m_startIndex  = _firstIndex;
 			m_draw.m_numIndices  = _numIndices;
 			m_draw.m_indexBuffer = _handle;
@@ -2880,7 +2918,7 @@ namespace bgfx
 
 		void setIndexBuffer(const DynamicIndexBuffer& _dib, uint32_t _firstIndex, uint32_t _numIndices)
 		{
-			BX_ASSERT(UINT8_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
+			BX_ASSERT(UINT32_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
 			const uint32_t indexSize = 0 == (_dib.m_flags & BGFX_BUFFER_INDEX32) ? 2 : 4;
 			m_draw.m_startIndex  = _dib.m_startIndex + _firstIndex;
 			m_draw.m_numIndices  = bx::min(_numIndices, _dib.m_size/indexSize);
@@ -2890,7 +2928,7 @@ namespace bgfx
 
 		void setIndexBuffer(const TransientIndexBuffer* _tib, uint32_t _firstIndex, uint32_t _numIndices)
 		{
-			BX_ASSERT(UINT8_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
+			BX_ASSERT(UINT32_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
 			const uint32_t indexSize  = _tib->isIndex16 ? 2 : 4;
 			const uint32_t numIndices = bx::min(_numIndices, _tib->size/indexSize);
 			m_draw.m_indexBuffer = _tib->handle;
@@ -2908,7 +2946,7 @@ namespace bgfx
 			, VertexLayoutHandle _layoutHandle
 			)
 		{
-			BX_ASSERT(UINT8_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
+			BX_ASSERT(UINT32_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
 			BX_ASSERT(_stream < BGFX_CONFIG_MAX_VERTEX_STREAMS, "Invalid stream %d (max %d).", _stream, BGFX_CONFIG_MAX_VERTEX_STREAMS);
 			if (m_draw.setStreamBit(_stream, _handle) )
 			{
@@ -2928,7 +2966,7 @@ namespace bgfx
 			, VertexLayoutHandle _layoutHandle
 			)
 		{
-			BX_ASSERT(UINT8_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
+			BX_ASSERT(UINT32_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
 			BX_ASSERT(_stream < BGFX_CONFIG_MAX_VERTEX_STREAMS, "Invalid stream %d (max %d).", _stream, BGFX_CONFIG_MAX_VERTEX_STREAMS);
 			if (m_draw.setStreamBit(_stream, _dvb.m_handle) )
 			{
@@ -2950,7 +2988,7 @@ namespace bgfx
 			, VertexLayoutHandle _layoutHandle
 			)
 		{
-			BX_ASSERT(UINT8_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
+			BX_ASSERT(UINT32_MAX != m_draw.m_streamMask, "bgfx::setVertexCount was already called for this draw call.");
 			BX_ASSERT(_stream < BGFX_CONFIG_MAX_VERTEX_STREAMS, "Invalid stream %d (max %d).", _stream, BGFX_CONFIG_MAX_VERTEX_STREAMS);
 			if (m_draw.setStreamBit(_stream, _tvb->handle) )
 			{
@@ -2965,7 +3003,7 @@ namespace bgfx
 		void setVertexCount(uint32_t _numVertices)
 		{
 			BX_ASSERT(0 == m_draw.m_streamMask, "Vertex buffer already set.");
-			m_draw.m_streamMask  = UINT8_MAX;
+			m_draw.m_streamMask  = UINT32_MAX;
 			Stream& stream = m_draw.m_stream[0];
 			stream.m_startVertex        = 0;
 			stream.m_handle.idx         = kInvalidHandle;
@@ -3736,7 +3774,7 @@ namespace bgfx
 		virtual void invalidateOcclusionQuery(OcclusionQueryHandle _handle) = 0;
 		virtual void setMarker(const char* _name, uint16_t _len) = 0;
 		virtual void setName(Handle _handle, const char* _name, uint16_t _len) = 0;
-		virtual void submit(Frame* _render, ClearQuad& _clearQuad, TextVideoMemBlitter& _textVideoMemBlitter) = 0;
+		virtual void submit(Frame* _render, const ClearQuad& _clearQuad, const MipGen& _mipGen, TextVideoMemBlitter& _textVideoMemBlitter) = 0;
 		virtual void dbgTextRenderBegin(TextVideoMemBlitter& _blitter) = 0;
 		virtual void dbgTextRender(TextVideoMemBlitter& _blitter, uint32_t _numIndices) = 0;
 		virtual void dbgTextRenderEnd(TextVideoMemBlitter& _blitter) = 0;
@@ -6035,6 +6073,7 @@ namespace bgfx
 
 		TextVideoMemBlitter m_textVideoMemBlitter;
 		ClearQuad m_clearQuad;
+		MipGen m_mipGen;
 
 		RendererContextI* m_renderCtx;
 

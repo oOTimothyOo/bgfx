@@ -504,7 +504,7 @@ namespace bgfx { namespace d3d11
 			char temp[2048];
 			va_list argList;
 			va_start(argList, _format);
-			int size = bx::uint32_min(sizeof(temp)-1, bx::vsnprintf(temp, sizeof(temp), _format, argList) );
+			int32_t size = bx::min<int32_t>(sizeof(temp)-1, bx::vsnprintf(temp, sizeof(temp), _format, argList) );
 			va_end(argList);
 			temp[size] = '\0';
 
@@ -1272,11 +1272,11 @@ namespace bgfx { namespace d3d11
 				if (m_featureLevel <= D3D_FEATURE_LEVEL_9_2)
 				{
 					g_caps.limits.maxTextureSize   = D3D_FL9_1_REQ_TEXTURE2D_U_OR_V_DIMENSION;
-					g_caps.limits.maxFBAttachments = uint8_t(bx::uint32_min(
+					g_caps.limits.maxFBAttachments = uint8_t(bx::min(
 						  D3D_FL9_1_SIMULTANEOUS_RENDER_TARGET_COUNT
 						, BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS
 						) );
-					g_caps.limits.maxVertexStreams = uint8_t(bx::uint32_min(
+					g_caps.limits.maxVertexStreams = uint8_t(bx::min(
 						  16
 						, BGFX_CONFIG_MAX_VERTEX_STREAMS
 						) );
@@ -1284,11 +1284,11 @@ namespace bgfx { namespace d3d11
 				else if (m_featureLevel == D3D_FEATURE_LEVEL_9_3)
 				{
 					g_caps.limits.maxTextureSize   = D3D_FL9_3_REQ_TEXTURE2D_U_OR_V_DIMENSION;
-					g_caps.limits.maxFBAttachments = uint8_t(bx::uint32_min(
+					g_caps.limits.maxFBAttachments = uint8_t(bx::min(
 						  D3D_FL9_3_SIMULTANEOUS_RENDER_TARGET_COUNT
 						, BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS
 						) );
-					g_caps.limits.maxVertexStreams = uint8_t(bx::uint32_min(
+					g_caps.limits.maxVertexStreams = uint8_t(bx::min(
 						  16
 						, BGFX_CONFIG_MAX_VERTEX_STREAMS
 						) );
@@ -1304,11 +1304,11 @@ namespace bgfx { namespace d3d11
 					g_caps.supported |= BGFX_CAPS_TEXTURE_COMPARE_ALL;
 					g_caps.limits.maxTextureSize   = D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION;
 					g_caps.limits.maxTextureLayers = D3D11_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION;
-					g_caps.limits.maxFBAttachments = uint8_t(bx::uint32_min(
+					g_caps.limits.maxFBAttachments = uint8_t(bx::min(
 						  D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT
 						, BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS
 						) );
-					g_caps.limits.maxVertexStreams = uint8_t(bx::uint32_min(
+					g_caps.limits.maxVertexStreams = uint8_t(bx::min(
 						  D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
 						, BGFX_CONFIG_MAX_VERTEX_STREAMS
 						) );
@@ -1846,7 +1846,7 @@ namespace bgfx { namespace d3d11
 
 		void updateDynamicIndexBuffer(IndexBufferHandle _handle, uint32_t _offset, uint32_t _size, const Memory* _mem) override
 		{
-			m_indexBuffers[_handle.idx].update(_offset, bx::uint32_min(_size, _mem->size), _mem->data);
+			m_indexBuffers[_handle.idx].update(_offset, bx::min(_size, _mem->size), _mem->data);
 		}
 
 		void destroyDynamicIndexBuffer(IndexBufferHandle _handle) override
@@ -1862,7 +1862,7 @@ namespace bgfx { namespace d3d11
 
 		void updateDynamicVertexBuffer(VertexBufferHandle _handle, uint32_t _offset, uint32_t _size, const Memory* _mem) override
 		{
-			m_vertexBuffers[_handle.idx].update(_offset, bx::uint32_min(_size, _mem->size), _mem->data);
+			m_vertexBuffers[_handle.idx].update(_offset, bx::min(_size, _mem->size), _mem->data);
 		}
 
 		void destroyDynamicVertexBuffer(VertexBufferHandle _handle) override
@@ -1906,8 +1906,8 @@ namespace bgfx { namespace d3d11
 			D3D11_MAPPED_SUBRESOURCE mapped;
 			DX_CHECK(m_deviceCtx->Map(texture.m_ptr, _mip, D3D11_MAP_READ, 0, &mapped) );
 
-			uint32_t srcWidth  = bx::uint32_max(1, texture.m_width >>_mip);
-			uint32_t srcHeight = bx::uint32_max(1, texture.m_height>>_mip);
+			uint32_t srcWidth  = bx::max(1, texture.m_width >>_mip);
+			uint32_t srcHeight = bx::max(1, texture.m_height>>_mip);
 			uint8_t* src       = (uint8_t*)mapped.pData;
 			uint32_t srcPitch  = mapped.RowPitch;
 
@@ -1915,7 +1915,7 @@ namespace bgfx { namespace d3d11
 			uint8_t* dst      = (uint8_t*)_data;
 			uint32_t dstPitch = srcWidth*bpp/8;
 
-			uint32_t pitch = bx::uint32_min(srcPitch, dstPitch);
+			uint32_t pitch = bx::min(srcPitch, dstPitch);
 
 			bx::memCopy(dst, dstPitch, src, srcPitch, pitch, srcHeight);
 
@@ -2194,7 +2194,7 @@ namespace bgfx { namespace d3d11
 
 		void submitUniformCache(UniformCacheState& _ucs, uint16_t _view);
 
-		void submit(Frame* _render, ClearQuad& _clearQuad, TextVideoMemBlitter& _textVideoMemBlitter) override;
+		void submit(Frame* _render, const ClearQuad& _clearQuad, const MipGen& _mipGen, TextVideoMemBlitter& _textVideoMemBlitter) override;
 
 		void dbgTextRenderBegin(TextVideoMemBlitter& _blitter) override
 		{
@@ -2341,8 +2341,8 @@ namespace bgfx { namespace d3d11
 			if (bimg::isDepth(bimg::TextureFormat::Enum(m_resolution.formatDepthStencil) ) )
 			{
 				D3D11_TEXTURE2D_DESC dsd;
-				dsd.Width  = bx::uint32_max(m_scd.width,  1);
-				dsd.Height = bx::uint32_max(m_scd.height,  1);
+				dsd.Width  = bx::max(m_scd.width,  1);
+				dsd.Height = bx::max(m_scd.height,  1);
 				dsd.MipLevels  = 1;
 				dsd.ArraySize  = 1;
 				dsd.Format     = s_textureFormat[m_resolution.formatDepthStencil].m_fmtDsv;
@@ -2386,9 +2386,16 @@ namespace bgfx { namespace d3d11
 					: !!(m_resolution.reset & BGFX_RESET_VSYNC)
 					;
 
+				uint32_t presentFlags = 0;
+				if (!syncInterval
+				&&  m_dxgi.tearingSupported() )
+				{
+					presentFlags |= DXGI_PRESENT_ALLOW_TEARING;
+				}
+
 				for (uint32_t ii = 1, num = m_numWindows; ii < num && SUCCEEDED(hr); ++ii)
 				{
-					hr = m_frameBuffers[m_windows[ii].idx].present(syncInterval);
+					hr = m_frameBuffers[m_windows[ii].idx].present(syncInterval, presentFlags);
 				}
 
 				if (SUCCEEDED(hr) )
@@ -2396,14 +2403,6 @@ namespace bgfx { namespace d3d11
 					if (NULL != m_swapChain
 					&&  m_needPresent)
 					{
-						uint32_t presentFlags = 0;
-
-						if (!syncInterval
-						&&  m_dxgi.tearingSupported() )
-						{
-							presentFlags |= DXGI_PRESENT_ALLOW_TEARING;
-						}
-
 						hr = m_swapChain->Present(syncInterval, presentFlags);
 
 						m_needPresent = false;
@@ -3583,7 +3582,7 @@ namespace bgfx { namespace d3d11
 				if (isValid(fbh) )
 				{
 					const FrameBufferD3D11& fb = m_frameBuffers[fbh.idx];
-					numMrt = bx::uint32_max(1, fb.m_num);
+					numMrt = bx::max(1, fb.m_num);
 				}
 
 				ProgramD3D11& program = m_program[_clearQuad.m_program[numMrt-1].idx];
@@ -3606,7 +3605,7 @@ namespace bgfx { namespace d3d11
 					{
 						for (uint32_t ii = 0; ii < numMrt; ++ii)
 						{
-							uint8_t index = (uint8_t)bx::uint32_min(BGFX_CONFIG_MAX_COLOR_PALETTE-1, _clear.m_index[ii]);
+							uint8_t index = (uint8_t)bx::min(BGFX_CONFIG_MAX_COLOR_PALETTE-1, _clear.m_index[ii]);
 							bx::memCopy(mrtClearColor[ii], _palette[index], 16);
 						}
 					}
@@ -4864,10 +4863,13 @@ namespace bgfx { namespace d3d11
 			}
 		}
 
-		const bool renderTarget = 0 != (m_flags&BGFX_TEXTURE_RT_MASK);
-		if (renderTarget
+		const bool renderTarget = 0 != (m_flags  & BGFX_TEXTURE_RT_MASK);
+		const bool autoGenMips  = 0 != (_resolve & BGFX_RESOLVE_AUTO_GEN_MIPS);
+
+		if (autoGenMips
+		&&  renderTarget
 		&&  1 < m_numMips
-		&&  0 != (_resolve & BGFX_RESOLVE_AUTO_GEN_MIPS) )
+		   )
 		{
 			deviceCtx->GenerateMips(m_srv);
 		}
@@ -5283,11 +5285,11 @@ namespace bgfx { namespace d3d11
 		s_renderD3D11->m_currentDepthStencil = m_dsv;
 	}
 
-	HRESULT FrameBufferD3D11::present(uint32_t _syncInterval)
+	HRESULT FrameBufferD3D11::present(uint32_t _syncInterval, uint32_t _flags)
 	{
 		if (m_needPresent)
 		{
-			HRESULT hr = m_swapChain->Present(_syncInterval, 0);
+			HRESULT hr = m_swapChain->Present(_syncInterval, _flags);
 			hr = !isLost(hr) ? S_OK : hr;
 			m_needPresent = false;
 			return hr;
@@ -5538,7 +5540,7 @@ namespace bgfx { namespace d3d11
 			{
 				bool depthStencil = bimg::isDepth(bimg::TextureFormat::Enum(src.m_textureFormat) );
 				BX_ASSERT(!depthStencil
-					||  (blit.m_width == bx::uint32_max(1, src.m_width >> blit.m_srcMip) && blit.m_height == bx::uint32_max(1, src.m_height >> blit.m_srcMip))
+					||  (blit.m_width == bx::max(1, src.m_width >> blit.m_srcMip) && blit.m_height == bx::max(1, src.m_height >> blit.m_srcMip))
 					, "When blitting depthstencil surface, source resolution must match destination."
 					);
 
@@ -5576,7 +5578,7 @@ namespace bgfx { namespace d3d11
 		}
 	}
 
-	void RendererContextD3D11::submit(Frame* _render, ClearQuad& _clearQuad, TextVideoMemBlitter& _textVideoMemBlitter)
+	void RendererContextD3D11::submit(Frame* _render, const ClearQuad& _clearQuad, const MipGen& /*_mipGen*/, TextVideoMemBlitter& _textVideoMemBlitter)
 	{
 		if (m_lost)
 		{
@@ -6229,7 +6231,7 @@ namespace bgfx { namespace d3d11
 					uint32_t numVertices = draw.m_numVertices;
 					uint8_t  numStreams  = 0;
 
-					if (UINT8_MAX != draw.m_streamMask)
+					if (UINT32_MAX != draw.m_streamMask)
 					{
 						for (BitMaskToIndexIteratorT it(draw.m_streamMask)
 							; !it.isDone()
@@ -6255,7 +6257,7 @@ namespace bgfx { namespace d3d11
 							offsets[numStreams] = draw.m_stream[idx].m_startVertex * stride;
 							layouts[numStreams]   = &layout;
 
-							numVertices = bx::uint32_min(UINT32_MAX == draw.m_numVertices
+							numVertices = bx::min(UINT32_MAX == draw.m_numVertices
 								? vb.m_size/stride
 								: draw.m_numVertices
 								, numVertices
