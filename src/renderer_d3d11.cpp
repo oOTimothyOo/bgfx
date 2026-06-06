@@ -2533,10 +2533,16 @@ namespace bgfx { namespace d3d11
 				m_rasterizerStateCache.invalidate();
 			}
 
+			if (_resolution.reset & BGFX_RESET_VSYNC)
+				m_resolution.reset |= BGFX_RESET_VSYNC;
+			else
+				m_resolution.reset &= ~BGFX_RESET_VSYNC;
+
 			const uint32_t maskFlags = ~(0
 				| BGFX_RESET_MAXANISOTROPY
 				| BGFX_RESET_DEPTH_CLAMP
 				| BGFX_RESET_SUSPEND
+				| BGFX_RESET_VSYNC
 				);
 
 			if (m_resolution.width              != _resolution.width
@@ -3315,7 +3321,7 @@ namespace bgfx { namespace d3d11
 			if (NULL == ptr)
 			{
 				const TextureD3D11& texture = m_textures[_handle.idx];
-				const uint32_t msaaQuality = bx::uint32_satsub( (texture.m_flags&BGFX_TEXTURE_RT_MSAA_MASK)>>BGFX_TEXTURE_RT_MSAA_SHIFT, 1);
+				const uint32_t msaaQuality = bx::satSub<uint32_t>(uint32_t( (texture.m_flags&BGFX_TEXTURE_RT_MSAA_MASK) >> BGFX_TEXTURE_RT_MSAA_SHIFT ), 1u);
 				const DXGI_SAMPLE_DESC& msaa = s_msaa[msaaQuality];
 				const bool msaaSample = 1 < msaa.Count && 0 != (texture.m_flags&BGFX_TEXTURE_MSAA_SAMPLE);
 
@@ -3881,7 +3887,7 @@ namespace bgfx { namespace d3d11
 			}
 			else
 			{
-				const uint32_t uavType = bx::uint32_satsub( (_flags & BGFX_BUFFER_COMPUTE_TYPE_MASK  ) >> BGFX_BUFFER_COMPUTE_TYPE_SHIFT, 1);
+				const uint32_t uavType = bx::satSub<uint32_t>(uint32_t( (_flags & BGFX_BUFFER_COMPUTE_TYPE_MASK) >> BGFX_BUFFER_COMPUTE_TYPE_SHIFT ), 1u);
 				format = s_uavFormat[uavFormat].format[uavType];
 				stride = s_uavFormat[uavFormat].stride;
 			}
@@ -4445,7 +4451,7 @@ namespace bgfx { namespace d3d11
 			const bool readBack       = 0 != (m_flags & BGFX_TEXTURE_READ_BACK);
 			const bool externalShared = 0 != (m_flags & BGFX_TEXTURE_EXTERNAL_SHARED);
 
-			const uint32_t msaaQuality = bx::uint32_satsub( (m_flags&BGFX_TEXTURE_RT_MSAA_MASK)>>BGFX_TEXTURE_RT_MSAA_SHIFT, 1);
+			const uint32_t msaaQuality = bx::satSub<uint32_t>(uint32_t( (m_flags&BGFX_TEXTURE_RT_MSAA_MASK) >> BGFX_TEXTURE_RT_MSAA_SHIFT ), 1u);
 			const DXGI_SAMPLE_DESC& msaa = s_msaa[msaaQuality];
 			const bool msaaSample  = true
 				&& 1 < msaa.Count
@@ -4598,9 +4604,13 @@ namespace bgfx { namespace d3d11
 
 					if (needResolve)
 					{
+						const uint32_t savedMipLevels = desc.MipLevels;
+						desc.MipLevels = 1;
 						DX_CHECK(s_renderD3D11->m_device->CreateTexture2D(&desc, NULL, &m_rt2d) );
+
 						desc.BindFlags &= ~(D3D11_BIND_RENDER_TARGET|D3D11_BIND_DEPTH_STENCIL);
 						desc.SampleDesc = s_msaa[0];
+						desc.MipLevels  = savedMipLevels;
 					}
 
 					if (!external)
@@ -5051,7 +5061,7 @@ namespace bgfx { namespace d3d11
 						}
 					}
 
-					const uint32_t msaaQuality = bx::uint32_satsub( (texture.m_flags&BGFX_TEXTURE_RT_MSAA_MASK)>>BGFX_TEXTURE_RT_MSAA_SHIFT, 1);
+					const uint32_t msaaQuality = bx::satSub<uint32_t>(uint32_t( (texture.m_flags&BGFX_TEXTURE_RT_MSAA_MASK) >> BGFX_TEXTURE_RT_MSAA_SHIFT ), 1u);
 					const DXGI_SAMPLE_DESC& msaa = s_msaa[msaaQuality];
 
 					if (bimg::isDepth(bimg::TextureFormat::Enum(texture.m_textureFormat) ) )
@@ -5524,7 +5534,7 @@ namespace bgfx { namespace d3d11
 				box.front  = blit.m_srcZ;
 				box.right  = blit.m_srcX + blit.m_width;
 				box.bottom = blit.m_srcY + blit.m_height;
-				box.back   = blit.m_srcZ + bx::uint32_imax(1, blit.m_depth);
+				box.back   = blit.m_srcZ + bx::max<int32_t>(1, blit.m_depth);
 
 				deviceCtx->CopySubresourceRegion(dst.m_ptr
 					, blit.m_dstMip
@@ -5586,6 +5596,7 @@ namespace bgfx { namespace d3d11
 		}
 
 		updateNativeWindow();
+
 		if (updateResolution(_render->m_resolution) )
 		{
 			return;
@@ -6511,7 +6522,7 @@ namespace bgfx { namespace d3d11
 			elapsedGpuMs   = (result.m_end - result.m_begin) * toGpuMs;
 			maxGpuElapsed  = elapsedGpuMs > maxGpuElapsed ? elapsedGpuMs : maxGpuElapsed;
 
-			maxGpuLatency = bx::uint32_imax(maxGpuLatency, result.m_pending-1);
+			maxGpuLatency = bx::max<int32_t>(maxGpuLatency, result.m_pending-1);
 		}
 
 		const int64_t timerFreq = bx::getHPFrequency();

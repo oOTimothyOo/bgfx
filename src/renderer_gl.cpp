@@ -8,7 +8,6 @@
 #if (BGFX_CONFIG_RENDERER_OPENGLES || BGFX_CONFIG_RENDERER_OPENGL)
 #	include "renderer_gl.h"
 #	include <bx/timer.h>
-#	include <bx/uint32_t.h>
 #	include "emscripten.h"
 
 namespace bgfx { namespace gl
@@ -5677,7 +5676,7 @@ namespace bgfx { namespace gl
 		if (renderTarget)
 		{
 			uint32_t msaaQuality = ( (m_flags&BGFX_TEXTURE_RT_MSAA_MASK)>>BGFX_TEXTURE_RT_MSAA_SHIFT);
-			msaaQuality = bx::uint32_satsub(msaaQuality, 1);
+			msaaQuality = bx::satSub<uint32_t>(msaaQuality, 1u);
 			msaaQuality = bx::min(s_renderGL->m_maxMsaa, msaaQuality == 0 ? 0 : 1<<msaaQuality);
 			const bool msaaSample = 0 != (m_flags&BGFX_TEXTURE_MSAA_SAMPLE);
 
@@ -5749,7 +5748,7 @@ namespace bgfx { namespace gl
 			const bool srgb         = 0 != (_flags&BGFX_TEXTURE_SRGB);
 			const bool msaaSample   = 0 != (_flags&BGFX_TEXTURE_MSAA_SAMPLE);
 			uint32_t msaaQuality = ( (_flags&BGFX_TEXTURE_RT_MSAA_MASK)>>BGFX_TEXTURE_RT_MSAA_SHIFT);
-			msaaQuality = bx::uint32_satsub(msaaQuality, 1);
+			msaaQuality = bx::satSub<uint32_t>(msaaQuality, 1u);
 			msaaQuality = bx::min(s_renderGL->m_maxMsaa, msaaQuality == 0 ? 0 : 1<<msaaQuality);
 
 			GLenum target = msaaSample ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
@@ -6004,8 +6003,11 @@ namespace bgfx { namespace gl
 
 	void TextureGL::update(uint8_t _side, uint8_t _mip, const Rect& _rect, uint16_t _z, uint16_t _depth, uint16_t _pitch, const Memory* _mem)
 	{
+		const bimg::ImageBlockInfo& blockInfo = bimg::getBlockInfo(bimg::TextureFormat::Enum(m_requestedFormat) );
+		const bool compressed = bimg::isCompressed(bimg::TextureFormat::Enum(m_requestedFormat) );
 		const uint32_t bpp = bimg::getBitsPerPixel(bimg::TextureFormat::Enum(m_textureFormat) );
-		const uint32_t rectpitch = _rect.m_width*bpp/8;
+
+		uint32_t rectpitch = _rect.m_width*bpp/8;
 		uint32_t srcpitch  = UINT16_MAX == _pitch ? rectpitch : _pitch;
 
 		GL_CHECK(glBindTexture(m_target, m_id) );
@@ -6022,7 +6024,6 @@ namespace bgfx { namespace gl
 			&& !s_renderGL->m_textureSwizzleSupport
 			;
 		const bool unpackRowLength = !!BGFX_CONFIG_RENDERER_OPENGL || s_extension[Extension::EXT_unpack_subimage].m_supported;
-		const bool compressed      = bimg::isCompressed(bimg::TextureFormat::Enum(m_requestedFormat) );
 		const bool convert         = false
 			|| (compressed && m_textureFormat != m_requestedFormat)
 			|| swizzle
@@ -6039,13 +6040,23 @@ namespace bgfx { namespace gl
 		uint32_t width  = rect.m_width;
 		uint32_t height = rect.m_height;
 
+		if (compressed
+		&& !convert)
+		{
+			const uint32_t numBlocksX = (width + blockInfo.blockWidth - 1) / blockInfo.blockWidth;
+			rectpitch = numBlocksX * blockInfo.blockSize;
+			srcpitch  = UINT16_MAX == _pitch ? rectpitch : _pitch;
+		}
+
 		uint8_t* temp = NULL;
 		if (convert
-		||  !unpackRowLength)
+		||  !unpackRowLength
+		||  (compressed && UINT16_MAX != _pitch && srcpitch != rectpitch) )
 		{
 			temp = (uint8_t*)bx::alloc(g_allocator, rectpitch*height);
 		}
-		else if (unpackRowLength)
+		else if (unpackRowLength
+		     &&  !compressed)
 		{
 			GL_CHECK(glPixelStorei(GL_UNPACK_ROW_LENGTH, srcpitch*8/bpp) );
 		}
@@ -6055,9 +6066,11 @@ namespace bgfx { namespace gl
 		{
 			const uint8_t* data = _mem->data;
 
-			if (!unpackRowLength)
+			const uint32_t numBlocksY = (height + blockInfo.blockHeight - 1) / blockInfo.blockHeight;
+
+			if (NULL != temp)
 			{
-				bimg::imageCopy(temp, width, height, 1, bpp, srcpitch, data);
+				bimg::imageCopy(temp, numBlocksY, srcpitch, 1, data, rectpitch);
 				data = temp;
 			}
 			const GLenum internalFmt = (0 != (m_flags & BGFX_TEXTURE_SRGB) )
@@ -6073,7 +6086,7 @@ namespace bgfx { namespace gl
 				, rect.m_height
 				, _depth
 				, internalFmt
-				, _mem->size
+				, rectpitch*numBlocksY
 				, data
 				) );
 		}
@@ -7452,7 +7465,7 @@ namespace bgfx { namespace gl
 					, bi.m_dstZ
 					, bi.m_width
 					, bi.m_height
-					, bx::uint32_imax(bi.m_depth, 1)
+					, bx::max<int32_t>(bi.m_depth, 1)
 					) );
 				}
 		}
@@ -8648,7 +8661,7 @@ namespace bgfx { namespace gl
 			elapsedGpuMs   = (result.m_end - result.m_begin) * toGpuMs;
 			maxGpuElapsed  = elapsedGpuMs > maxGpuElapsed ? elapsedGpuMs : maxGpuElapsed;
 
-			maxGpuLatency = bx::uint32_imax(maxGpuLatency, result.m_pending-1);
+			maxGpuLatency = bx::max<int32_t>(maxGpuLatency, result.m_pending-1);
 		}
 
 		const int64_t timerFreq = bx::getHPFrequency();

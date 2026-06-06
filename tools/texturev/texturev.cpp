@@ -15,7 +15,6 @@
 #include <bx/os.h>
 #include <bx/process.h>
 #include <bx/settings.h>
-#include <bx/uint32_t.h>
 
 #include <entry/entry.h>
 #include <entry/input.h>
@@ -81,12 +80,14 @@ static const char* s_supportedExt[] =
 	"jpeg",
 	"jpg",
 	"ktx",
+	"ktx2",
 	"pgm",
 	"png",
 	"ppm",
 	"psd",
 	"pvr",
 	"tga",
+	"webp",
 };
 
 struct Binding
@@ -231,7 +232,7 @@ static const InputBinding* s_binding[] =
 static_assert(Binding::Count == BX_COUNTOF(s_binding) );
 
 static const char* s_filter = ""
-	"All Image Formats (bmp, dds, exr, gif, gnf, jpg, jpeg, hdr, ktx, pgm, png, ppm, psd, pvr, tga) | *.bmp *.dds *.exr *.gif *.gnf *.jpg *.jpeg *.hdr *.ktx *.pgm *.png *.ppm *.psd *.pvr *.tga\n"
+	"All Image Formats (bmp, dds, exr, gif, gnf, jpg, jpeg, hdr, ktx, ktx2, pgm, png, ppm, psd, pvr, tga, webp) | *.bmp *.dds *.exr *.gif *.gnf *.jpg *.jpeg *.hdr *.ktx *.ktx2 *.pgm *.png *.ppm *.psd *.pvr *.tga *.webp\n"
 	"Windows Bitmap (bmp) | *.bmp\n"
 	"Direct Draw Surface (dds) | *.dds\n"
 	"OpenEXR (exr) | *.exr\n"
@@ -239,11 +240,13 @@ static const char* s_filter = ""
 	"JPEG Interchange Format (jpg, jpeg) | *.jpg *.jpeg\n"
 	"Radiance RGBE (hdr) | *.hdr\n"
 	"Khronos Texture (ktx) | *.ktx\n"
+	"Khronos Texture 2 (ktx2) | *.ktx2\n"
 	"Portable Graymap/Pixmap Format (pgm, ppm) | *.pgm *.ppm\n"
 	"Portable Network Graphics (png) | *.png\n"
 	"Photoshop Document (psd) | *.psd\n"
 	"PowerVR (pvr) | *.pvr\n"
 	"Truevision TGA (tga) | *.tga\n"
+	"WebP (webp) | *.webp\n"
 	;
 
 #if BX_PLATFORM_WINDOWS
@@ -581,11 +584,11 @@ struct View
 			}
 			else if (0 == bx::strCmp(_argv[1], "file-up") )
 			{
-				m_fileIndex = bx::uint32_satsub(m_fileIndex, 1);
+				m_fileIndex = bx::satSub<uint32_t>(m_fileIndex, 1u);
 			}
 			else if (0 == bx::strCmp(_argv[1], "file-down") )
 			{
-				uint32_t numFiles = bx::uint32_satsub(uint32_t(m_fileList.size() ), 1);
+				uint32_t numFiles = bx::satSub<uint32_t>(uint32_t(m_fileList.size()), 1u);
 				++m_fileIndex;
 				m_fileIndex = bx::min(m_fileIndex, numFiles);
 			}
@@ -1498,7 +1501,7 @@ int _main_(int _argc, char** _argv)
 	bgfx::TextureHandle texture = BGFX_INVALID_HANDLE;
 
 	{
-		uint32_t fileIndex = 0;
+		uint32_t fileIndex = UINT32_MAX;
 		bool dragging = false;
 
 		entry::WindowState windowState;
@@ -2040,7 +2043,7 @@ int _main_(int _argc, char** _argv)
 
 			imguiEndFrame();
 
-			if ( (!bgfx::isValid(texture) || view.m_fileIndex != fileIndex)
+			if (view.m_fileIndex != fileIndex
 			&&  0 != view.m_fileList.size() )
 			{
 				if (bgfx::isValid(texture) )
@@ -2054,6 +2057,7 @@ int _main_(int _argc, char** _argv)
 				fp.join(view.m_fileList[view.m_fileIndex].c_str() );
 
 				bimg::Orientation::Enum orientation;
+				bx::Error loadErr;
 				texture = loadTexture(fp.getCPtr()
 					, 0
 					| BGFX_SAMPLER_U_CLAMP
@@ -2062,6 +2066,7 @@ int _main_(int _argc, char** _argv)
 					, 0
 					, &view.m_textureInfo
 					, &orientation
+					, &loadErr
 					);
 
 				bimg::TextureFormat::Enum format = bimg::TextureFormat::Enum(view.m_textureInfo.format);
@@ -2114,7 +2119,16 @@ int _main_(int _argc, char** _argv)
 				}
 				else
 				{
-					bx::stringPrintf(title, "Failed to load %s!", filePath);
+					if (!loadErr.isOk() )
+					{
+						const bx::StringView& msg = loadErr.getMessage();
+						bx::stringPrintf(title, "Failed to load %s: %S", filePath, &msg);
+						bx::printf("Failed to load %s: %S\n", filePath, &msg);
+					}
+					else
+					{
+						bx::stringPrintf(title, "Failed to load %s!", filePath);
+					}
 				}
 
 				entry::setWindowTitle(entry::kDefaultWindowHandle, title.c_str() );
